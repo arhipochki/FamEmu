@@ -237,7 +237,7 @@ impl CPU {
         let addr = self.get_operand_address(mode);
         let value = self.mem_read(addr) as i8;
 
-        self.set_register_a(value.wrapping_neg().wrapping_sub(1) as u8);
+        self.add_to_register_a(value.wrapping_neg().wrapping_sub(1) as u8);
     }
 
     fn and(&mut self, mode: &AddressingMode) {
@@ -627,8 +627,6 @@ impl CPU {
 
             let opcode = opcodes.get(&code).expect(&format!("OpCode {:x} wasn't recognized!", code));
             //let opcode = opcodes.get(&code).unwrap();
-
-            println!("code {:x}", &code);
 
             match code {
                 // BRK
