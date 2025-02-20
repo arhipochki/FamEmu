@@ -1,4 +1,7 @@
+use crate::bus::Bus;
 use crate::cpu::opcodes;
+use crate::cpu::mem::Mem;
+
 use std::collections::HashMap;
 
 #[derive(Debug)]
@@ -47,7 +50,6 @@ bitflags::bitflags! {
 const STACK: u16 = 0x0100;
 const STACK_RESET: u8 = 0xFD;
 
-#[derive(Debug)]
 pub struct CPU {
     pub register_a: u8,
     pub register_x: u8,
@@ -55,42 +57,21 @@ pub struct CPU {
     pub status: CpuFlags,
     pub program_counter: u16,
     pub stack_pointer: u8,
-    memory: [u8; 0xFFFF]
-}
-
-pub trait Mem {
-    fn mem_read(&self, addr: u16) -> u8;
-
-    fn mem_write(&mut self, addr: u16, data: u8);
-
-    fn mem_read_u16(&self, pos: u16) -> u16 {
-        let low = self.mem_read(pos) as u16;
-        let high = self.mem_read(pos + 1) as u16;
-
-        (high << 8) | low
-    }
-
-    fn mem_write_u16(&mut self, pos: u16, data: u16) {
-        let high = (data >> 8) as u8;
-        let low = (data & 0xFF) as u8;
-
-        self.mem_write(pos, low);
-        self.mem_write(pos + 1, high);
-    }
+    pub bus: Bus,
 }
 
 impl Mem for CPU {
     fn mem_read(&self, addr: u16) -> u8 {
-        self.memory[addr as usize]
+        self.bus.mem_read(addr)
     }
 
     fn mem_write(&mut self, addr: u16, data: u8) {
-        self.memory[addr as usize] = data;
+        self.bus.mem_write(addr, data);
     }
 }
 
 impl CPU {
-    pub fn new() -> Self {
+    pub fn new(bus: Bus) -> Self {
         CPU {
             register_a: 0,
             register_x: 0,
@@ -98,48 +79,46 @@ impl CPU {
             status: CpuFlags::from_bits_truncate(0b100100),
             program_counter: 0,
             stack_pointer: STACK_RESET,
-            memory: [0; 0xFFFF]
+            bus: bus
         }
     }
     
-    fn get_operand_address(&self, mode: &AddressingMode) -> u16 {
+    pub fn get_absolute_address(&self, mode: &AddressingMode, addr: u16) -> u16 {
         match mode {
-            AddressingMode::Immediate => self.program_counter,
+            AddressingMode::ZeroPage => self.mem_read(addr) as u16,
 
-            AddressingMode::ZeroPage => self.mem_read(self.program_counter) as u16,
-
-            AddressingMode::Absolute => self.mem_read_u16(self.program_counter),
+            AddressingMode::Absolute => self.mem_read_u16(addr),
 
             AddressingMode::ZeroPage_X => {
-                let pos = self.mem_read(self.program_counter);
+                let pos = self.mem_read(addr);
                 let addr = pos.wrapping_add(self.register_x) as u16;
                 
                 addr
             }
 
             AddressingMode::ZeroPage_Y => {
-                let pos = self.mem_read(self.program_counter);
+                let pos = self.mem_read(addr);
                 let addr = pos.wrapping_add(self.register_y) as u16;
                 
                 addr
             }
 
             AddressingMode::Absolute_X => {
-                let base = self.mem_read_u16(self.program_counter);
+                let base = self.mem_read_u16(addr);
                 let addr = base.wrapping_add(self.register_x as u16);
                 
                 addr
             }
 
             AddressingMode::Absolute_Y => {
-                let base = self.mem_read_u16(self.program_counter);
+                let base = self.mem_read_u16(addr);
                 let addr = base.wrapping_add(self.register_y as u16);
                 
                 addr
             }
 
             AddressingMode::Indirect_X => {
-                let base = self.mem_read(self.program_counter);
+                let base = self.mem_read(addr);
                 
                 let ptr = base.wrapping_add(self.register_x);
 
@@ -150,7 +129,7 @@ impl CPU {
             }
 
             AddressingMode::Indirect_Y => {
-                let base = self.mem_read(self.program_counter);
+                let base = self.mem_read(addr);
 
                 let low = self.mem_read(base as u16);
                 let high = self.mem_read(base.wrapping_add(1) as u16);
@@ -161,9 +140,17 @@ impl CPU {
                 deref
             }
 
-            AddressingMode::NoneAddressing => {
+            AddressingMode::NoneAddressing | _ => {
                 panic!("AddressingMode {:?} isn't supported!", mode);
             }
+        }
+    }
+
+    fn get_operand_address(&self, mode: &AddressingMode) -> u16 {
+        match mode {
+            AddressingMode::Immediate => self.program_counter,
+
+            _ => self.get_absolute_address(mode, self.program_counter)
         }
     }
 
@@ -304,8 +291,10 @@ impl CPU {
         let addr = self.get_operand_address(mode);
         let mut value = self.mem_read(addr);
         value = value.wrapping_sub(1);
+        
         self.mem_write(addr, value);
         self.update_zero_and_negative_flags(value);
+        
         value
     }
 
@@ -606,7 +595,7 @@ impl CPU {
     }
 
     pub fn load(&mut self, program: Vec<u8>) {
-        self.memory[0x0600 .. (0x0600 + program.len())].copy_from_slice(&program[..]);
+        //self.memory[0x0600 .. (0x0600 + program.len())].copy_from_slice(&program[..]);
         self.mem_write_u16(0xFFFC, 0x0600);
     }
 
@@ -621,6 +610,8 @@ impl CPU {
         let ref opcodes: HashMap<u8, &'static opcodes::OpCode> = *opcodes::OPCODES_MAP;
 
         loop {
+            callback(self);
+
             let code = self.mem_read(self.program_counter);
             self.program_counter += 1;
             let current_program_counter_state = self.program_counter;
@@ -819,8 +810,6 @@ impl CPU {
             if current_program_counter_state == self.program_counter {
                 self.program_counter += (opcode.len - 1) as u16;
             }
-
-            callback(self);
         }
     }
 }
