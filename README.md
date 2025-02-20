@@ -1,5 +1,7 @@
 # FamEmu
 
+![Alt text](/screenshots/Demo.png?raw=true "Demonstration")
+
 FamEmu is an app written in Rust to emulate Famicom. Current stage: emulating simple snake game.
 
 Currently dropped due to lack of time.
