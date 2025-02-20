@@ -1,4 +1,6 @@
-# FamEmu written in Rust
+# FamEmu
+
+FamEmu is an app written in Rust to emulate Famicom. Currently dropped due to lack of time. 
 
 ### Note: to compile SDL2 on Windows, do this:
 1. Download from https://www.libsdl.org/ SDL2-devel for msvc
